@@ -1,9 +1,24 @@
+@layer base, antd, components, utilities;
+
 @import "tailwindcss";
+
+@theme {
+  --color-ink: #20334f;
+  --color-ink-strong: #091a33;
+  --color-muted: #53677f;
+  --color-line: rgba(181, 199, 230, 0.72);
+  --color-line-soft: #e4edf8;
+  --color-page-bg: #f4f8ff;
+  --size-content-max: 350;
+
+  --width-3/4: 75%;
+  --font-size-2xs: 10px;
+}
 
 @layer base {
   :root {
-    --blue: #1769ff;
-    --green: #12a66a;
+    --blue: var(--ant-color-primary);
+    --green: var(--ant-color-success);
     --ink: #20334f;
     --ink-strong: #091a33;
     --muted: #53677f;
@@ -12,7 +27,7 @@
   }
 
   body {
-    @apply min-w-[320px] m-0 font-sans text-[#20334f] bg-[#f4f8ff] antialiased;
+    @apply min-w-80 m-0 font-sans text-ink bg-page-bg antialiased;
     font-family: 'Microsoft YaHei UI', 'PingFang SC', 'HarmonyOS Sans SC', 'Noto Sans CJK SC', sans-serif;
   }
 }
