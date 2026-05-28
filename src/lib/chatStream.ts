@@ -25,11 +25,44 @@ export interface MessageCompletedEvent {
 	content: string
 }
 
+/** tool.call.started 携带的工具调用参数摘要（与 FilterDTO 语义一致） */
+export interface ToolCallArguments {
+	mode?: string
+	query?: string
+	city?: string
+	salary_range?: string
+	education?: string
+	experience?: string
+	industry?: string
+	role?: string
+	keywords?: string
+	top_k?: number
+	[key: string]: unknown
+}
+
+/** tool.call.completed 中单条推荐摘要 */
+export interface ToolCallResultItem {
+	id: number
+	/** 岗位标题或候选人姓名 */
+	name?: string
+	title?: string
+	match?: number
+	tags?: string[]
+}
+
+/** tool.call.completed 的 result 字段 */
+export interface ToolCallResult {
+	source: string
+	items: ToolCallResultItem[]
+}
+
 export interface ToolCallStartedEvent {
 	conversationId: string
 	messageId: string
 	toolCallId: string
 	toolName: string
+	/** LLM 传入工具的结构化参数 */
+	arguments: ToolCallArguments
 }
 
 export interface ToolCallCompletedEvent {
@@ -37,6 +70,8 @@ export interface ToolCallCompletedEvent {
 	messageId: string
 	toolCallId: string
 	toolName: string
+	/** 工具执行后的推荐摘要 */
+	result: ToolCallResult
 }
 
 export interface ChatErrorEvent {
@@ -229,6 +264,7 @@ function isToolCallStartedPayload(value: unknown): value is ToolCallStartedEvent
 		&& typeof record.messageId === 'string'
 		&& typeof record.toolCallId === 'string'
 		&& typeof record.toolName === 'string'
+		&& typeof record.arguments === 'object' && record.arguments !== null
 }
 
 function isToolCallCompletedPayload(value: unknown): value is ToolCallCompletedEvent {
@@ -238,6 +274,7 @@ function isToolCallCompletedPayload(value: unknown): value is ToolCallCompletedE
 		&& typeof record.messageId === 'string'
 		&& typeof record.toolCallId === 'string'
 		&& typeof record.toolName === 'string'
+		&& typeof record.result === 'object' && record.result !== null
 }
 
 function isChatErrorPayload(value: unknown): value is ChatErrorEvent {

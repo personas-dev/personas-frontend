@@ -4,7 +4,13 @@ import { Modal, Input, Button, App, Alert } from 'antd'
 import { RobotOutlined, SendOutlined, UserOutlined } from '@ant-design/icons'
 import { Avatar } from 'antd'
 import type { AssistantMessage, AssistantMode } from '../../types/domain'
-import { openChatStream, type ChatStreamHandle } from '../../lib/chatStream'
+import {
+	openChatStream,
+	type ChatStreamHandle,
+	type ToolCallArguments,
+	type ToolCallResult,
+} from '../../lib/chatStream'
+import { ToolCallCard, type ToolCallCardStatus } from './ToolCallCard'
 
 interface AssistantModalProps {
 	open: boolean
@@ -21,6 +27,18 @@ interface AssistantModalProps {
 	onClose: () => void
 }
 
+interface ToolCallEntry {
+	kind: 'tool-call'
+	toolCallId: string
+	toolName: string
+	status: ToolCallCardStatus
+	arguments: ToolCallArguments
+	result?: ToolCallResult
+}
+
+/** 对话流消息条目（普通消息或工具调用卡片） */
+type ChatEntry = (AssistantMessage & { kind: 'message' }) | ToolCallEntry
+
 function getCurrentTime(): string {
 	const now = new Date()
 	return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
@@ -34,7 +52,9 @@ export function AssistantModal({
 	initialMessages,
 	onClose,
 }: AssistantModalProps) {
-	const [messages, setMessages] = useState<AssistantMessage[]>(initialMessages)
+	const [entries, setEntries] = useState<ChatEntry[]>(() =>
+		initialMessages.map((m) => ({ ...m, kind: 'message' as const })),
+	)
 	const [inputValue, setInputValue] = useState('')
 	const [nextId, setNextId] = useState(() => initialMessages.reduce((max, m) => Math.max(max, m.id), 0) + 1)
 	const [conversationId, setConversationId] = useState('')
@@ -68,14 +88,15 @@ export function AssistantModal({
 		closeCurrentStream()
 		activeAssistantMessageRef.current = null
 
-		const userMsg: AssistantMessage = {
+		const userEntry: ChatEntry = {
+			kind: 'message',
 			id: nextId,
 			from: 'user',
 			text: trimmed,
 			time: getCurrentTime(),
 		}
 
-		setMessages((prev) => [...prev, userMsg])
+		setEntries((prev) => [...prev, userEntry])
 		setInputValue('')
 		setIsStreaming(true)
 		setStreamStatus('')
@@ -103,11 +124,28 @@ export function AssistantModal({
 			},
 			onToolCallStarted: (event) => {
 				setConversationId(event.conversationId)
-				setStreamStatus('正在更新推荐结果')
+				setEntries((prev) => [
+					...prev,
+					{
+						kind: 'tool-call',
+						toolCallId: event.toolCallId,
+						toolName: event.toolName,
+						status: 'running',
+						arguments: event.arguments,
+					},
+				])
+				setStreamStatus(null)
 			},
 			onToolCallCompleted: (event) => {
 				setConversationId(event.conversationId)
-				setStreamStatus('推荐结果已更新')
+				setEntries((prev) =>
+					prev.map((entry) =>
+						entry.kind === 'tool-call' && entry.toolCallId === event.toolCallId
+							? { ...entry, status: 'completed' as const, result: event.result }
+							: entry,
+					),
+				)
+				setStreamStatus('推荐已更新，正在生成解释')
 			},
 			onError: (event) => {
 				if (event.conversationId !== null) {
@@ -133,7 +171,7 @@ export function AssistantModal({
 
 	function handleClear() {
 		closeCurrentStream()
-		setMessages([])
+		setEntries([])
 		setNextId(1)
 		setInputValue('')
 		setConversationId('')
@@ -152,13 +190,15 @@ export function AssistantModal({
 		activeAssistantMessageRef.current ??= { streamMessageId, localMessageId }
 		const currentLocalId = activeAssistantMessageRef.current.localMessageId
 
-		setMessages((prev) => {
-			const existing = prev.find((msg) => msg.id === currentLocalId)
+		setEntries((prev) => {
+			const existing = prev.find((e) => e.kind === 'message' && e.id === currentLocalId)
 			if (existing === undefined) {
-				return [...prev, { id: currentLocalId, from: 'assistant', text: delta, time: getCurrentTime() }]
+				return [...prev, { kind: 'message', id: currentLocalId, from: 'assistant', text: delta, time: getCurrentTime() }]
 			}
 
-			return prev.map((msg) => msg.id === currentLocalId ? { ...msg, text: msg.text + delta } : msg)
+			return prev.map((e) =>
+				e.kind === 'message' && e.id === currentLocalId ? { ...e, text: e.text + delta } : e,
+			)
 		})
 	}
 
@@ -166,13 +206,15 @@ export function AssistantModal({
 		activeAssistantMessageRef.current ??= { streamMessageId, localMessageId }
 		const currentLocalId = activeAssistantMessageRef.current.localMessageId
 
-		setMessages((prev) => {
-			const existing = prev.find((msg) => msg.id === currentLocalId)
+		setEntries((prev) => {
+			const existing = prev.find((e) => e.kind === 'message' && e.id === currentLocalId)
 			if (existing === undefined) {
-				return [...prev, { id: currentLocalId, from: 'assistant', text: content, time: getCurrentTime() }]
+				return [...prev, { kind: 'message', id: currentLocalId, from: 'assistant', text: content, time: getCurrentTime() }]
 			}
 
-			return prev.map((msg) => msg.id === currentLocalId ? { ...msg, text: content } : msg)
+			return prev.map((e) =>
+				e.kind === 'message' && e.id === currentLocalId ? { ...e, text: content } : e,
+			)
 		})
 	}
 
@@ -239,64 +281,85 @@ export function AssistantModal({
 					</div>
 				</div>
 
-			<div data-testid="assistant-message-list" className="flex-1 overflow-y-auto mb-3 space-y-3">
-				{messages.map((msg) => (
-						<div
-							key={msg.id}
-							className={`flex items-start gap-2 ${msg.from === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
-						>
-							{msg.from === 'assistant' ? (
-								<Avatar
-									size={32}
-									icon={<RobotOutlined />}
-									className="shrink-0 bg-blue-500"
-								/>
-							) : (
-								<Avatar
-									size={32}
-									icon={<UserOutlined />}
-									className="shrink-0 bg-slate-400"
-								/>
-							)}
+				<div data-testid="assistant-message-list" className="flex-1 overflow-y-auto mb-3 space-y-3">
+					{entries.map((entry, index) => {
+							if (entry.kind === 'tool-call') {
+							return (
+								<div key={entry.toolCallId} className="flex items-start gap-2 flex-row">
+									<Avatar
+										size={32}
+										icon={<RobotOutlined />}
+										className="shrink-0 bg-blue-500"
+									/>
+									<ToolCallCard
+										toolName={entry.toolName}
+										status={entry.status}
+										arguments={entry.arguments}
+										result={entry.result}
+									/>
+								</div>
+							)
+						}
 
+						const msg = entry
+						return (
 							<div
-								className={`max-w-3/4 px-4 py-2.5 text-sm ${msg.from === 'user'
+								key={msg.id}
+								className={`flex items-start gap-2 ${msg.from === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+							>
+								{msg.from === 'assistant' ? (
+									<Avatar
+										size={32}
+										icon={<RobotOutlined />}
+										className="shrink-0 bg-blue-500"
+									/>
+								) : (
+									<Avatar
+										size={32}
+										icon={<UserOutlined />}
+										className="shrink-0 bg-slate-400"
+									/>
+								)}
+
+								<div
+									className={`max-w-3/4 px-4 py-2.5 text-sm ${msg.from === 'user'
 										? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm'
 										: 'bg-slate-100 text-slate-700 rounded-2xl rounded-tl-sm'
-									}`}
+										}`}
+								>
+									<p className="leading-relaxed whitespace-pre-wrap m-0">{msg.text}</p>
+								</div>
+							</div>
+						)
+					})}
+
+					{streamStatus !== null && (
+						<div className="flex items-start gap-2 flex-row">
+							<Avatar
+								size={32}
+								icon={<RobotOutlined />}
+								className="shrink-0 bg-blue-500 opacity-70"
+							/>
+							<div
+								data-testid="assistant-stream-status"
+								className="max-w-3/4 px-4 py-2.5 text-sm bg-slate-100 text-slate-500 rounded-2xl rounded-tl-sm flex items-center gap-2"
 							>
-								<p className="leading-relaxed whitespace-pre-wrap m-0">{msg.text}</p>
+								<span className="flex gap-1 items-center h-4">
+									<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+									<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+									<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+								</span>
+								{streamStatus}
 							</div>
 						</div>
-				))}
+					)}
+				</div>
 
-				{streamStatus !== null && (
-					<div className="flex items-start gap-2 flex-row">
-						<Avatar
-							size={32}
-							icon={<RobotOutlined />}
-							className="shrink-0 bg-blue-500 opacity-70"
-						/>
-						<div
-							data-testid="assistant-stream-status"
-							className="max-w-3/4 px-4 py-2.5 text-sm bg-slate-100 text-slate-500 rounded-2xl rounded-tl-sm flex items-center gap-2"
-						>
-							<span className="flex gap-1 items-center h-4">
-								<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-								<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-								<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-							</span>
-							{streamStatus}
-						</div>
+				{errorMessage !== null && (
+					<div className="shrink-0 mb-3">
+						<Alert data-testid="assistant-stream-error" type="error" showIcon title={errorMessage} />
 					</div>
 				)}
-			</div>
-
-			{errorMessage !== null && (
-				<div className="shrink-0 mb-3">
-					<Alert data-testid="assistant-stream-error" type="error" showIcon title={errorMessage} />
-				</div>
-			)}
 
 				<div className="shrink-0 flex gap-2 items-end">
 					<Input.TextArea
