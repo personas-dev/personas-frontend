@@ -60,8 +60,8 @@ export function SearchToolbar({
 								aria-pressed={active}
 								onClick={() => onToggleFilter(filter.id)}
 								className={`inline-flex items-center gap-1 border text-xs px-2.5 py-1 rounded-md cursor-pointer transition-colors ${active
-										? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
-										: 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
+									? 'bg-blue-50 border-blue-300 text-blue-700 hover:bg-blue-100'
+									: 'bg-slate-50 border-slate-200 text-slate-600 hover:bg-slate-100'
 									}`}
 							>
 								{filter.label}

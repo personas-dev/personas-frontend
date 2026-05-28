@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Modal, Input, Button, App, Alert } from 'antd'
-import { SendOutlined } from '@ant-design/icons'
+
+import { RobotOutlined, SendOutlined, UserOutlined } from '@ant-design/icons'
+import { Avatar } from 'antd'
 import type { AssistantMessage, AssistantMode } from '../../types/domain'
 import { openChatStream, type ChatStreamHandle } from '../../lib/chatStream'
 
@@ -76,7 +78,7 @@ export function AssistantModal({
 		setMessages((prev) => [...prev, userMsg])
 		setInputValue('')
 		setIsStreaming(true)
-		setStreamStatus('正在连接助手')
+		setStreamStatus('')
 		setErrorMessage(null)
 		setNextId((prev) => prev + 2)
 
@@ -131,8 +133,8 @@ export function AssistantModal({
 
 	function handleClear() {
 		closeCurrentStream()
-		setMessages(initialMessages)
-		setNextId(initialMessages.reduce((max, m) => Math.max(max, m.id), 0) + 1)
+		setMessages([])
+		setNextId(1)
 		setInputValue('')
 		setConversationId('')
 		setIsStreaming(false)
@@ -237,40 +239,64 @@ export function AssistantModal({
 					</div>
 				</div>
 
-				<div data-testid="assistant-message-list" className="flex-1 overflow-y-auto mb-3 space-y-3">
-					{messages.map((msg) => (
-						<div key={msg.id} className={`flex ${msg.from === 'user' ? 'justify-end' : 'justify-start'}`}>
+			<div data-testid="assistant-message-list" className="flex-1 overflow-y-auto mb-3 space-y-3">
+				{messages.map((msg) => (
+						<div
+							key={msg.id}
+							className={`flex items-start gap-2 ${msg.from === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
+						>
+							{msg.from === 'assistant' ? (
+								<Avatar
+									size={32}
+									icon={<RobotOutlined />}
+									className="shrink-0 bg-blue-500"
+								/>
+							) : (
+								<Avatar
+									size={32}
+									icon={<UserOutlined />}
+									className="shrink-0 bg-slate-400"
+								/>
+							)}
+
 							<div
-								className={`max-w-3/4 px-4 py-2.5 text-sm ${
-									msg.from === 'user'
+								className={`max-w-3/4 px-4 py-2.5 text-sm ${msg.from === 'user'
 										? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm'
 										: 'bg-slate-100 text-slate-700 rounded-2xl rounded-tl-sm'
-								}`}
-							>
-								<p className="leading-relaxed whitespace-pre-wrap">{msg.text}</p>
-								<div
-									className={`text-2xs mt-1 text-right ${
-										msg.from === 'user' ? 'text-blue-200' : 'text-slate-400'
 									}`}
-								>
-									{msg.time}
-								</div>
+							>
+								<p className="leading-relaxed whitespace-pre-wrap m-0">{msg.text}</p>
 							</div>
 						</div>
-					))}
-				</div>
+				))}
 
-				{(streamStatus !== null || errorMessage !== null) && (
-					<div className="shrink-0 mb-3">
-						{errorMessage !== null ? (
-							<Alert data-testid="assistant-stream-error" type="error" showIcon title={errorMessage} />
-						) : (
-							<div data-testid="assistant-stream-status" className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
-								{streamStatus}
-							</div>
-						)}
+				{streamStatus !== null && (
+					<div className="flex items-start gap-2 flex-row">
+						<Avatar
+							size={32}
+							icon={<RobotOutlined />}
+							className="shrink-0 bg-blue-500 opacity-70"
+						/>
+						<div
+							data-testid="assistant-stream-status"
+							className="max-w-3/4 px-4 py-2.5 text-sm bg-slate-100 text-slate-500 rounded-2xl rounded-tl-sm flex items-center gap-2"
+						>
+							<span className="flex gap-1 items-center h-4">
+								<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
+								<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
+								<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
+							</span>
+							{streamStatus}
+						</div>
 					</div>
 				)}
+			</div>
+
+			{errorMessage !== null && (
+				<div className="shrink-0 mb-3">
+					<Alert data-testid="assistant-stream-error" type="error" showIcon title={errorMessage} />
+				</div>
+			)}
 
 				<div className="shrink-0 flex gap-2 items-end">
 					<Input.TextArea

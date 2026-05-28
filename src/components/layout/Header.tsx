@@ -32,7 +32,7 @@ export function Header({ activeTab, onTabChange }: HeaderProps) {
         <div className="flex items-center gap-3 cursor-pointer hover:bg-slate-50 p-2 rounded-lg transition-colors">
           <span className="w-5 h-5 rounded-full bg-red-100 text-red-600 text-xs flex items-center justify-center font-bold">6</span>
           <div className="w-8 h-8 rounded-full bg-blue-100 text-blue-600 flex items-center justify-center font-medium">张</div>
-          <span className="text-sm font-medium text-slate-700">张伟 · HR / 求职者</span>
+          <span className="text-sm font-medium text-slate-700">张伟</span>
         </div>
       </div>
     </header>

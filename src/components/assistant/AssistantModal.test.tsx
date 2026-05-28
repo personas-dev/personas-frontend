@@ -108,7 +108,7 @@ describe('AssistantModal stream runtime', () => {
 			['search_keyword', 'Java 上海'],
 			['active_filters', 'city-shanghai,salary-range'],
 		])
-		expect(screen.getByTestId('assistant-stream-status')).toHaveTextContent('正在连接助手')
+		expect(screen.getByTestId('assistant-stream-status')).toBeInTheDocument()
 	})
 
 	it('appends deltas to one assistant bubble and corrects content on completion', async () => {

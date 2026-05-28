@@ -230,7 +230,7 @@ export function JobSearchView() {
 
 				{isLoading ? (
 					<div data-testid="job-search-loading" className="bg-white rounded-xl border border-slate-200 shadow-sm py-16 flex items-center justify-center">
-						<Spin description="正在从后端加载岗位推荐" />
+						<Spin description="正在加载岗位推荐" />
 					</div>
 				) : errorMessage !== null ? null : jobResults.length === 0 ? (
 					<div className="flex items-center justify-center py-20">

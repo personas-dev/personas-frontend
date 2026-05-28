@@ -20,6 +20,11 @@ function renderApp() {
 				locale={zhCN}
 				theme={{
 					token: themeToken,
+					components: {
+						Button: {
+							primaryColor: '#ffffff',
+						},
+					},
 					cssVar: {},
 				}}
 			>

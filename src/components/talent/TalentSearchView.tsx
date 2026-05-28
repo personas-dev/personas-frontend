@@ -37,7 +37,7 @@ function getErrorMessage(error: unknown): string {
 		return error.message
 	}
 
-	return '人才推荐接口暂时不可用'
+	return '人才推荐暂时不可用'
 }
 
 function getNextCandidateId(nextCandidates: Candidate[], currentCandidateId: number | null): number | null {
@@ -275,7 +275,7 @@ export function TalentSearchView() {
 
 				{isLoading ? (
 					<div data-testid="talent-search-loading" className="bg-white rounded-xl border border-slate-200 shadow-sm py-16 flex items-center justify-center">
-						<Spin description="正在从后端加载人才推荐" />
+						<Spin description="正在加载人才推荐" />
 					</div>
 				) : errorMessage !== null ? null : candidateResults.length === 0 ? (
 					<div className="flex items-center justify-center py-20">
