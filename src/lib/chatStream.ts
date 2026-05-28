@@ -4,7 +4,7 @@ import type { AssistantMode } from '../types/domain'
 const API_PREFIX = '/api/v1'
 const CHAT_STREAM_PATH = '/chat/stream'
 
-export interface ChatStreamRequest {
+interface ChatStreamRequest {
 	message: string
 	mode: AssistantMode
 	conversationId: string
@@ -13,13 +13,13 @@ export interface ChatStreamRequest {
 	activeFilters: string[]
 }
 
-export interface MessageDeltaEvent {
+interface MessageDeltaEvent {
 	conversationId: string
 	messageId: string
 	delta: string
 }
 
-export interface MessageCompletedEvent {
+interface MessageCompletedEvent {
 	conversationId: string
 	messageId: string
 	content: string
@@ -41,7 +41,7 @@ export interface ToolCallArguments {
 }
 
 /** tool.call.completed 中单条推荐摘要 */
-export interface ToolCallResultItem {
+interface ToolCallResultItem {
 	id: number
 	/** 岗位标题或候选人姓名 */
 	name?: string
@@ -56,7 +56,7 @@ export interface ToolCallResult {
 	items: ToolCallResultItem[]
 }
 
-export interface ToolCallStartedEvent {
+interface ToolCallStartedEvent {
 	conversationId: string
 	messageId: string
 	toolCallId: string
@@ -65,7 +65,7 @@ export interface ToolCallStartedEvent {
 	arguments: ToolCallArguments
 }
 
-export interface ToolCallCompletedEvent {
+interface ToolCallCompletedEvent {
 	conversationId: string
 	messageId: string
 	toolCallId: string
@@ -74,14 +74,14 @@ export interface ToolCallCompletedEvent {
 	result: ToolCallResult
 }
 
-export interface ChatErrorEvent {
+interface ChatErrorEvent {
 	conversationId: string | null
 	messageId: string | null
 	code: number
 	message: string
 }
 
-export interface DoneEvent {
+interface DoneEvent {
 	conversationId: string
 	messageId: string
 	status: string

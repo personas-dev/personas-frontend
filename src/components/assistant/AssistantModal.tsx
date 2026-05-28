@@ -164,7 +164,8 @@ export function AssistantModal({
 				onMessageDelta: (event) => {
 					setConversationId(event.conversationId)
 					appendAssistantDelta(event.messageId, localAssistantId, event.delta)
-					setStreamStatus('助手正在生成回答')
+					// 收到第一个 token 时，删除流状态气泡
+					setStreamStatus(null)
 				},
 				onMessageCompleted: (event) => {
 					setConversationId(event.conversationId)
