@@ -59,7 +59,7 @@ function ResultItem({ item }: { item: ToolCallResult['items'][number] }) {
 
 export type ToolCallCardStatus = 'running' | 'completed'
 
-export interface ToolCallCardProps {
+interface ToolCallCardProps {
 	toolName: string
 	/** 工具调用阶段 */
 	status: ToolCallCardStatus

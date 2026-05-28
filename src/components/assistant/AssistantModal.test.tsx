@@ -58,7 +58,6 @@ function renderAssistantModal(onClose = vi.fn()) {
 						<AssistantModal
 							open
 							mode="job"
-							contextTitle="Java 后端工程师"
 							contextStats={{ total: 2, high: 1 }}
 							context={{
 								searchKeyword: 'Java 上海',

@@ -307,7 +307,6 @@ export function TalentSearchView() {
 			<AssistantModal
 				open={assistantOpen}
 				mode="talent"
-				contextTitle={selectedCandidate?.name ?? ''}
 				contextStats={assistantStats}
 				context={{
 					searchKeyword: effectiveKeyword,

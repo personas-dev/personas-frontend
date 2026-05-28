@@ -264,7 +264,6 @@ export function JobSearchView() {
 			<AssistantModal
 				open={assistantOpen}
 				mode="job"
-				contextTitle={selectedJob?.title ?? ''}
 				contextStats={assistantStats}
 				context={{
 					searchKeyword: query,

@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { Modal, Input, Button, App, Alert } from 'antd'
-
-import { RobotOutlined, SendOutlined, UserOutlined } from '@ant-design/icons'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Modal, App, Alert } from 'antd'
+import { Bubble, Sender } from '@ant-design/x'
+import type { BubbleItemType } from '@ant-design/x'
+import { RobotOutlined, UserOutlined } from '@ant-design/icons'
 import { Avatar } from 'antd'
 import type { AssistantMessage, AssistantMode } from '../../types/domain'
 import {
@@ -15,7 +16,6 @@ import { ToolCallCard, type ToolCallCardStatus } from './ToolCallCard'
 interface AssistantModalProps {
 	open: boolean
 	mode: AssistantMode
-	contextTitle: string
 	contextStats: { total: number; high: number }
 	context?: {
 		searchKeyword: string
@@ -42,6 +42,31 @@ type ChatEntry = (AssistantMessage & { kind: 'message' }) | ToolCallEntry
 function getCurrentTime(): string {
 	const now = new Date()
 	return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
+}
+
+/** 将 ChatEntry 转换为 Bubble.List 可用的 BubbleItemType */
+function entriesToBubbleItems(entries: ChatEntry[]): BubbleItemType[] {
+	return entries.map((entry) => {
+		if (entry.kind === 'tool-call') {
+			return {
+				key: entry.toolCallId,
+				role: 'assistant',
+				content: entry.toolCallId, // 实际内容通过 contentRender 渲染
+				// 传递工具调用数据到 extraInfo
+				extraInfo: {
+					toolCall: entry,
+				},
+			}
+		}
+
+		// 普通消息
+		const msg = entry
+		return {
+			key: msg.id,
+			role: msg.from === 'user' ? 'user' : 'assistant',
+			content: msg.text,
+		}
+	})
 }
 
 export function AssistantModal({
@@ -78,8 +103,30 @@ export function AssistantModal({
 		return () => closeCurrentStream()
 	}, [open, closeCurrentStream])
 
-	function handleSend() {
-		const trimmed = inputValue.trim()
+	// 转换为 Bubble.List 可用的 items
+	const bubbleItems = useMemo(() => entriesToBubbleItems(entries), [entries])
+
+	// 添加流状态条目
+	const allBubbleItems = useMemo(() => {
+		if (streamStatus === null) {
+			return bubbleItems
+		}
+
+		return [
+			...bubbleItems,
+			{
+				key: 'stream-status',
+				role: 'assistant',
+				content: streamStatus,
+				extraInfo: {
+					isStreamStatus: true,
+				},
+			},
+		]
+	}, [bubbleItems, streamStatus])
+
+	function handleSend(message: string) {
+		const trimmed = message.trim()
 		if (trimmed === '') {
 			messageApi.warning('请输入问题')
 			return
@@ -104,67 +151,70 @@ export function AssistantModal({
 		setNextId((prev) => prev + 2)
 
 		const localAssistantId = nextId + 1
-		const stream = openChatStream({
-			message: trimmed,
-			mode,
-			conversationId,
-			selectedId: context?.selectedId ?? null,
-			searchKeyword: context?.searchKeyword ?? '',
-			activeFilters: context?.activeFilterIds ?? [],
-		}, {
-			onMessageDelta: (event) => {
-				setConversationId(event.conversationId)
-				appendAssistantDelta(event.messageId, localAssistantId, event.delta)
-				setStreamStatus('助手正在生成回答')
+		const stream = openChatStream(
+			{
+				message: trimmed,
+				mode,
+				conversationId,
+				selectedId: context?.selectedId ?? null,
+				searchKeyword: context?.searchKeyword ?? '',
+				activeFilters: context?.activeFilterIds ?? [],
 			},
-			onMessageCompleted: (event) => {
-				setConversationId(event.conversationId)
-				completeAssistantMessage(event.messageId, localAssistantId, event.content)
-				setStreamStatus('回答生成完成，正在结束连接')
-			},
-			onToolCallStarted: (event) => {
-				setConversationId(event.conversationId)
-				setEntries((prev) => [
-					...prev,
-					{
-						kind: 'tool-call',
-						toolCallId: event.toolCallId,
-						toolName: event.toolName,
-						status: 'running',
-						arguments: event.arguments,
-					},
-				])
-				setStreamStatus(null)
-			},
-			onToolCallCompleted: (event) => {
-				setConversationId(event.conversationId)
-				setEntries((prev) =>
-					prev.map((entry) =>
-						entry.kind === 'tool-call' && entry.toolCallId === event.toolCallId
-							? { ...entry, status: 'completed' as const, result: event.result }
-							: entry,
-					),
-				)
-				setStreamStatus('推荐已更新，正在生成解释')
-			},
-			onError: (event) => {
-				if (event.conversationId !== null) {
+			{
+				onMessageDelta: (event) => {
 					setConversationId(event.conversationId)
-				}
+					appendAssistantDelta(event.messageId, localAssistantId, event.delta)
+					setStreamStatus('助手正在生成回答')
+				},
+				onMessageCompleted: (event) => {
+					setConversationId(event.conversationId)
+					completeAssistantMessage(event.messageId, localAssistantId, event.content)
+					setStreamStatus('回答生成完成，正在结束连接')
+				},
+				onToolCallStarted: (event) => {
+					setConversationId(event.conversationId)
+					setEntries((prev) => [
+						...prev,
+						{
+							kind: 'tool-call',
+							toolCallId: event.toolCallId,
+							toolName: event.toolName,
+							status: 'running',
+							arguments: event.arguments,
+						},
+					])
+					setStreamStatus(null)
+				},
+				onToolCallCompleted: (event) => {
+					setConversationId(event.conversationId)
+					setEntries((prev) =>
+						prev.map((entry) =>
+							entry.kind === 'tool-call' && entry.toolCallId === event.toolCallId
+								? { ...entry, status: 'completed' as const, result: event.result }
+								: entry,
+						),
+					)
+					setStreamStatus('推荐已更新，正在生成解释')
+				},
+				onError: (event) => {
+					if (event.conversationId !== null) {
+						setConversationId(event.conversationId)
+					}
 
-				stopStreamWithError(event.message)
+					stopStreamWithError(event.message)
+				},
+				onConnectionError: () => {
+					stopStreamWithError('对话连接已中断，请重试')
+				},
+				onDone: (event) => {
+					setConversationId(event.conversationId)
+					setIsStreaming(false)
+					setStreamStatus(null)
+					activeAssistantMessageRef.current = null
+					closeCurrentStream()
+				},
 			},
-			onConnectionError: () => {
-				stopStreamWithError('对话连接已中断，请重试')
-			},
-			onDone: (event) => {
-				setConversationId(event.conversationId)
-				setIsStreaming(false)
-				setStreamStatus(null)
-				activeAssistantMessageRef.current = null
-				closeCurrentStream()
-			},
-		})
+		)
 
 		streamRef.current = stream
 	}
@@ -193,7 +243,10 @@ export function AssistantModal({
 		setEntries((prev) => {
 			const existing = prev.find((e) => e.kind === 'message' && e.id === currentLocalId)
 			if (existing === undefined) {
-				return [...prev, { kind: 'message', id: currentLocalId, from: 'assistant', text: delta, time: getCurrentTime() }]
+				return [
+					...prev,
+					{ kind: 'message', id: currentLocalId, from: 'assistant', text: delta, time: getCurrentTime() },
+				]
 			}
 
 			return prev.map((e) =>
@@ -209,7 +262,10 @@ export function AssistantModal({
 		setEntries((prev) => {
 			const existing = prev.find((e) => e.kind === 'message' && e.id === currentLocalId)
 			if (existing === undefined) {
-				return [...prev, { kind: 'message', id: currentLocalId, from: 'assistant', text: content, time: getCurrentTime() }]
+				return [
+					...prev,
+					{ kind: 'message', id: currentLocalId, from: 'assistant', text: content, time: getCurrentTime() },
+				]
 			}
 
 			return prev.map((e) =>
@@ -240,6 +296,87 @@ export function AssistantModal({
 
 		return trimmed
 	}
+
+	// Bubble.List 的 role 配置
+	const bubbleRoles = useMemo(
+		() => ({
+			user: {
+				placement: 'end' as const,
+				avatar: <Avatar size={32} icon={<UserOutlined />} className="shrink-0 bg-slate-400" />,
+				variant: 'filled' as const,
+				shape: 'corner' as const,
+				styles: {
+					content: {
+						backgroundColor: '#2563eb',
+						color: '#ffffff',
+						borderRadius: '16px 16px 4px 16px',
+						paddingBlock: '10px',
+						paddingInline: '16px',
+						fontSize: '14px',
+						minHeight: 'auto',
+					},
+				},
+			},
+			assistant: {
+				placement: 'start' as const,
+				avatar: <Avatar size={32} icon={<RobotOutlined />} className="shrink-0 bg-blue-500" />,
+				variant: 'filled' as const,
+				shape: 'corner' as const,
+				styles: {
+					content: {
+						backgroundColor: '#f1f5f9',
+						color: '#334155',
+						borderRadius: '16px 16px 16px 4px',
+						paddingBlock: '10px',
+						paddingInline: '16px',
+						fontSize: '14px',
+						minHeight: 'auto',
+					},
+				},
+				contentRender: (content: string, info: { extraInfo?: Record<string, unknown> }) => {
+					// 检查是否是流状态
+					if (info.extraInfo?.isStreamStatus) {
+						return (
+							<div data-testid="assistant-stream-status" className="flex items-center gap-2">
+								<span className="flex gap-1 items-center h-4">
+									<span
+										className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+										style={{ animationDelay: '0ms' }}
+									/>
+									<span
+										className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+										style={{ animationDelay: '150ms' }}
+									/>
+									<span
+										className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce"
+										style={{ animationDelay: '300ms' }}
+									/>
+								</span>
+								{content}
+							</div>
+						)
+					}
+
+					// 检查是否是工具调用
+					if (info.extraInfo?.toolCall) {
+						const toolCall = info.extraInfo.toolCall as ToolCallEntry
+						return (
+							<ToolCallCard
+								toolName={toolCall.toolName}
+								status={toolCall.status}
+								arguments={toolCall.arguments}
+								result={toolCall.result}
+							/>
+						)
+					}
+
+					// 普通文本
+					return <p className="leading-relaxed whitespace-pre-wrap m-0">{content}</p>
+				},
+			},
+		}),
+		[],
+	)
 
 	return (
 		<Modal
@@ -281,78 +418,13 @@ export function AssistantModal({
 					</div>
 				</div>
 
-				<div data-testid="assistant-message-list" className="flex-1 overflow-y-auto mb-3 space-y-3">
-					{entries.map((entry, index) => {
-							if (entry.kind === 'tool-call') {
-							return (
-								<div key={entry.toolCallId} className="flex items-start gap-2 flex-row">
-									<Avatar
-										size={32}
-										icon={<RobotOutlined />}
-										className="shrink-0 bg-blue-500"
-									/>
-									<ToolCallCard
-										toolName={entry.toolName}
-										status={entry.status}
-										arguments={entry.arguments}
-										result={entry.result}
-									/>
-								</div>
-							)
-						}
-
-						const msg = entry
-						return (
-							<div
-								key={msg.id}
-								className={`flex items-start gap-2 ${msg.from === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
-							>
-								{msg.from === 'assistant' ? (
-									<Avatar
-										size={32}
-										icon={<RobotOutlined />}
-										className="shrink-0 bg-blue-500"
-									/>
-								) : (
-									<Avatar
-										size={32}
-										icon={<UserOutlined />}
-										className="shrink-0 bg-slate-400"
-									/>
-								)}
-
-								<div
-									className={`max-w-3/4 px-4 py-2.5 text-sm ${msg.from === 'user'
-										? 'bg-blue-600 text-white rounded-2xl rounded-tr-sm'
-										: 'bg-slate-100 text-slate-700 rounded-2xl rounded-tl-sm'
-										}`}
-								>
-									<p className="leading-relaxed whitespace-pre-wrap m-0">{msg.text}</p>
-								</div>
-							</div>
-						)
-					})}
-
-					{streamStatus !== null && (
-						<div className="flex items-start gap-2 flex-row">
-							<Avatar
-								size={32}
-								icon={<RobotOutlined />}
-								className="shrink-0 bg-blue-500 opacity-70"
-							/>
-							<div
-								data-testid="assistant-stream-status"
-								className="max-w-3/4 px-4 py-2.5 text-sm bg-slate-100 text-slate-500 rounded-2xl rounded-tl-sm flex items-center gap-2"
-							>
-								<span className="flex gap-1 items-center h-4">
-									<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }} />
-									<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }} />
-									<span className="w-1.5 h-1.5 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }} />
-								</span>
-								{streamStatus}
-							</div>
-						</div>
-					)}
+				<div data-testid="assistant-message-list" className="flex-1 overflow-hidden mb-3">
+					<Bubble.List
+						items={allBubbleItems}
+						autoScroll
+						role={bubbleRoles}
+						style={{ height: '100%' }}
+					/>
 				</div>
 
 				{errorMessage !== null && (
@@ -361,36 +433,33 @@ export function AssistantModal({
 					</div>
 				)}
 
-				<div className="shrink-0 flex gap-2 items-end">
-					<Input.TextArea
+				<div className="shrink-0">
+					<Sender
 						data-testid="assistant-input"
 						value={inputValue}
-						onChange={(e) => setInputValue(e.target.value)}
-						onPressEnter={(e) => {
-							if (!e.shiftKey) {
-								e.preventDefault()
-								handleSend()
-							}
+						onChange={setInputValue}
+						onSubmit={handleSend}
+						loading={isStreaming}
+						onCancel={() => {
+							closeCurrentStream()
+							setIsStreaming(false)
+							setStreamStatus(null)
 						}}
 						placeholder="输入您的问题，Enter 发送，Shift+Enter 换行"
 						autoSize={{ minRows: 1, maxRows: 4 }}
-						className="flex-1"
+						submitType="enter"
 					/>
-					<Button
-						data-testid="assistant-send-button"
-						type="primary"
-						onClick={handleSend}
-						icon={<SendOutlined />}
-						loading={isStreaming}
-					>
-						发送
-					</Button>
 				</div>
 
 				<div className="shrink-0 mt-2 flex justify-end">
-					<Button data-testid="assistant-clear-button" size="small" type="text" onClick={handleClear}>
+					<button
+						type="button"
+						data-testid="assistant-clear-button"
+						className="text-sm text-slate-500 hover:text-slate-700 transition-colors cursor-pointer"
+						onClick={handleClear}
+					>
 						清空对话
-					</Button>
+					</button>
 				</div>
 			</div>
 		</Modal>
