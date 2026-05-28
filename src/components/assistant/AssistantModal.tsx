@@ -1,13 +1,20 @@
-import { useState } from 'react'
-import { Modal, Input, Button, App } from 'antd'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Modal, Input, Button, App, Alert } from 'antd'
 import { SendOutlined } from '@ant-design/icons'
 import type { AssistantMessage, AssistantMode } from '../../types/domain'
+import { openChatStream, type ChatStreamHandle } from '../../lib/chatStream'
 
 interface AssistantModalProps {
 	open: boolean
 	mode: AssistantMode
 	contextTitle: string
 	contextStats: { total: number; high: number }
+	context?: {
+		searchKeyword: string
+		activeFilterIds: string[]
+		selectedId: number | null
+		stats: { total: number; high: number }
+	}
 	initialMessages: AssistantMessage[]
 	onClose: () => void
 }
@@ -17,43 +24,47 @@ function getCurrentTime(): string {
 	return `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`
 }
 
-function generateAssistantReply(userInput: string, contextTitle: string, mode: AssistantMode): string {
-	const input = userInput.toLowerCase()
-
-	if (input.includes('薪资') || input.includes('工资') || input.includes('薪水')) {
-		return `根据当前市场数据，「${contextTitle}」的薪资在行业中处于合理区间。建议您在面试中基于自身经验和技能进行薪资谈判，通常有 5%-10% 的上浮空间。`
-	}
-
-	if (input.includes('匹配') || input.includes('适合') || input.includes('推荐')) {
-		if (mode === 'job') {
-			return `针对「${contextTitle}」这个岗位，系统基于您的技能标签和项目经验进行了匹配分析。您具备该岗位所需的核心技术能力，匹配度较高。建议重点关注该岗位的职责描述中提到的微服务架构设计部分。`
-		}
-		return `候选人「${contextTitle}」与当前岗位的匹配分析显示：其项目经验与技能标签与岗位要求高度吻合。特别是在相关领域的实操经验方面表现突出，建议将其纳入推荐候选人的优先关注列表。`
-	}
-
-	return '这是基于 mock 数据的模拟回答：我会结合当前筛选条件继续优化推荐结果。'
-}
-
 export function AssistantModal({
 	open,
 	mode,
-	contextTitle,
 	contextStats,
+	context,
 	initialMessages,
 	onClose,
 }: AssistantModalProps) {
 	const [messages, setMessages] = useState<AssistantMessage[]>(initialMessages)
 	const [inputValue, setInputValue] = useState('')
 	const [nextId, setNextId] = useState(() => initialMessages.reduce((max, m) => Math.max(max, m.id), 0) + 1)
+	const [conversationId, setConversationId] = useState('')
+	const [isStreaming, setIsStreaming] = useState(false)
+	const [streamStatus, setStreamStatus] = useState<string | null>(null)
+	const [errorMessage, setErrorMessage] = useState<string | null>(null)
+	const streamRef = useRef<ChatStreamHandle | null>(null)
+	const activeAssistantMessageRef = useRef<{ streamMessageId: string; localMessageId: number } | null>(null)
 
-	const { message } = App.useApp()
+	const { message: messageApi } = App.useApp()
+	const closeCurrentStream = useCallback(() => {
+		streamRef.current?.close()
+		streamRef.current = null
+	}, [])
+
+	useEffect(() => {
+		if (!open) {
+			closeCurrentStream()
+		}
+
+		return () => closeCurrentStream()
+	}, [open, closeCurrentStream])
 
 	function handleSend() {
 		const trimmed = inputValue.trim()
 		if (trimmed === '') {
-			message.warning('请输入问题')
+			messageApi.warning('请输入问题')
 			return
 		}
+
+		closeCurrentStream()
+		activeAssistantMessageRef.current = null
 
 		const userMsg: AssistantMessage = {
 			id: nextId,
@@ -64,25 +75,126 @@ export function AssistantModal({
 
 		setMessages((prev) => [...prev, userMsg])
 		setInputValue('')
-
-		const assistantMsg: AssistantMessage = {
-			id: nextId + 1,
-			from: 'assistant',
-			text: generateAssistantReply(trimmed, contextTitle, mode),
-			time: getCurrentTime(),
-		}
-
-		setTimeout(() => {
-			setMessages((prev) => [...prev, assistantMsg])
-		}, 600)
-
+		setIsStreaming(true)
+		setStreamStatus('正在连接助手')
+		setErrorMessage(null)
 		setNextId((prev) => prev + 2)
+
+		const localAssistantId = nextId + 1
+		const stream = openChatStream({
+			message: trimmed,
+			mode,
+			conversationId,
+			selectedId: context?.selectedId ?? null,
+			searchKeyword: context?.searchKeyword ?? '',
+			activeFilters: context?.activeFilterIds ?? [],
+		}, {
+			onMessageDelta: (event) => {
+				setConversationId(event.conversationId)
+				appendAssistantDelta(event.messageId, localAssistantId, event.delta)
+				setStreamStatus('助手正在生成回答')
+			},
+			onMessageCompleted: (event) => {
+				setConversationId(event.conversationId)
+				completeAssistantMessage(event.messageId, localAssistantId, event.content)
+				setStreamStatus('回答生成完成，正在结束连接')
+			},
+			onToolCallStarted: (event) => {
+				setConversationId(event.conversationId)
+				setStreamStatus('正在更新推荐结果')
+			},
+			onToolCallCompleted: (event) => {
+				setConversationId(event.conversationId)
+				setStreamStatus('推荐结果已更新')
+			},
+			onError: (event) => {
+				if (event.conversationId !== null) {
+					setConversationId(event.conversationId)
+				}
+
+				stopStreamWithError(event.message)
+			},
+			onConnectionError: () => {
+				stopStreamWithError('对话连接已中断，请重试')
+			},
+			onDone: (event) => {
+				setConversationId(event.conversationId)
+				setIsStreaming(false)
+				setStreamStatus(null)
+				activeAssistantMessageRef.current = null
+				closeCurrentStream()
+			},
+		})
+
+		streamRef.current = stream
 	}
 
 	function handleClear() {
+		closeCurrentStream()
 		setMessages(initialMessages)
 		setNextId(initialMessages.reduce((max, m) => Math.max(max, m.id), 0) + 1)
 		setInputValue('')
+		setConversationId('')
+		setIsStreaming(false)
+		setStreamStatus(null)
+		setErrorMessage(null)
+		activeAssistantMessageRef.current = null
+	}
+
+	function handleClose() {
+		closeCurrentStream()
+		onClose()
+	}
+
+	function appendAssistantDelta(streamMessageId: string, localMessageId: number, delta: string) {
+		activeAssistantMessageRef.current ??= { streamMessageId, localMessageId }
+		const currentLocalId = activeAssistantMessageRef.current.localMessageId
+
+		setMessages((prev) => {
+			const existing = prev.find((msg) => msg.id === currentLocalId)
+			if (existing === undefined) {
+				return [...prev, { id: currentLocalId, from: 'assistant', text: delta, time: getCurrentTime() }]
+			}
+
+			return prev.map((msg) => msg.id === currentLocalId ? { ...msg, text: msg.text + delta } : msg)
+		})
+	}
+
+	function completeAssistantMessage(streamMessageId: string, localMessageId: number, content: string) {
+		activeAssistantMessageRef.current ??= { streamMessageId, localMessageId }
+		const currentLocalId = activeAssistantMessageRef.current.localMessageId
+
+		setMessages((prev) => {
+			const existing = prev.find((msg) => msg.id === currentLocalId)
+			if (existing === undefined) {
+				return [...prev, { id: currentLocalId, from: 'assistant', text: content, time: getCurrentTime() }]
+			}
+
+			return prev.map((msg) => msg.id === currentLocalId ? { ...msg, text: content } : msg)
+		})
+	}
+
+	function stopStreamWithError(rawMessage: string) {
+		const sanitizedMessage = sanitizeErrorMessage(rawMessage)
+		setIsStreaming(false)
+		setStreamStatus(null)
+		setErrorMessage(sanitizedMessage)
+		activeAssistantMessageRef.current = null
+		closeCurrentStream()
+		messageApi.error(sanitizedMessage)
+	}
+
+	function sanitizeErrorMessage(rawMessage: string): string {
+		const trimmed = rawMessage.trim()
+		if (trimmed === '') {
+			return '对话服务暂时不可用，请稍后重试'
+		}
+
+		if (/traceback|\.env|api[_-]?key|[a-zA-Z]:\\|\/app\/|\.py/i.test(trimmed)) {
+			return '对话服务暂时不可用，请稍后重试'
+		}
+
+		return trimmed
 	}
 
 	return (
@@ -90,12 +202,23 @@ export function AssistantModal({
 			data-testid="assistant-modal"
 			title={mode === 'job' ? '求职智能助手' : 'HR 招聘助手'}
 			open={open}
-			onCancel={onClose}
+			onCancel={handleClose}
 			width={720}
 			centered
 			footer={null}
 			destroyOnHidden={false}
 		>
+			{context !== undefined && (
+				<div
+					data-testid="assistant-context"
+					data-search-keyword={context.searchKeyword}
+					data-active-filter-ids={context.activeFilterIds.join(',')}
+					data-selected-id={context.selectedId ?? ''}
+					data-total={context.stats.total}
+					data-high={context.stats.high}
+					hidden
+				/>
+			)}
 			<div className="flex flex-col" style={{ height: '60vh', maxHeight: '600px' }}>
 				<div className="shrink-0 p-3 mb-3 bg-blue-50/80 border border-blue-100 rounded-xl">
 					<p className="text-xs font-bold text-blue-800 mb-2 flex items-center gap-1.5">
@@ -137,6 +260,18 @@ export function AssistantModal({
 					))}
 				</div>
 
+				{(streamStatus !== null || errorMessage !== null) && (
+					<div className="shrink-0 mb-3">
+						{errorMessage !== null ? (
+							<Alert data-testid="assistant-stream-error" type="error" showIcon title={errorMessage} />
+						) : (
+							<div data-testid="assistant-stream-status" className="text-xs text-slate-500 bg-slate-50 border border-slate-200 rounded-lg px-3 py-2">
+								{streamStatus}
+							</div>
+						)}
+					</div>
+				)}
+
 				<div className="shrink-0 flex gap-2 items-end">
 					<Input.TextArea
 						data-testid="assistant-input"
@@ -157,6 +292,7 @@ export function AssistantModal({
 						type="primary"
 						onClick={handleSend}
 						icon={<SendOutlined />}
+						loading={isStreaming}
 					>
 						发送
 					</Button>

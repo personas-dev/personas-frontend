@@ -4,7 +4,7 @@ interface HeaderProps {
 }
 
 export function Header({ activeTab, onTabChange }: HeaderProps) {
-  const navItems = ['人找岗', '岗找人', '报表中心', '系统管理']
+  const navItems = ['人找岗', '岗找人']
   return (
     <header className="bg-white border-b border-slate-200 sticky top-0 z-10 shadow-sm">
       <div className="max-w-content-max mx-auto px-4 h-16 flex items-center justify-between">
