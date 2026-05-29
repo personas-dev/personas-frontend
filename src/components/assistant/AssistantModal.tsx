@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Modal, App, Alert } from 'antd'
 import { Bubble, Sender } from '@ant-design/x'
 import type { BubbleItemType } from '@ant-design/x'
+import { XMarkdown } from '@ant-design/x-markdown'
+import '@ant-design/x-markdown/themes/light.css'
 import { RobotOutlined, UserOutlined } from '@ant-design/icons'
 import { Avatar } from 'antd'
 import type { AssistantMessage, AssistantMode } from '../../types/domain'
@@ -375,12 +377,19 @@ export function AssistantModal({
 						)
 					}
 
-					// 普通文本
-					return <p className="leading-relaxed whitespace-pre-wrap m-0">{content}</p>
+					return (
+						<XMarkdown
+							content={content}
+							streaming={{
+								hasNextChunk: isStreaming,
+								enableAnimation: true,
+							}}
+						/>
+					)
 				},
 			},
 		}),
-		[],
+		[isStreaming],
 	)
 
 	return (
