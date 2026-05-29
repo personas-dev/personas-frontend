@@ -174,6 +174,10 @@ export function AssistantModal({
 				},
 				onToolCallStarted: (event) => {
 					setConversationId(event.conversationId)
+					setNextId((prev) => {
+						activeAssistantMessageRef.current = { streamMessageId: event.messageId, localMessageId: prev }
+						return prev + 1
+					})
 					setEntries((prev) => [
 						...prev,
 						{
